@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import com.google.common.collect.Iterables;
 import com.server.graph_db.core.exceptions.vertex.VertexAlreadyExistsException;
 import com.server.graph_db.core.exceptions.vertex.VertexNotFoundException;
 import com.server.graph_db.core.partition.PartitionManager;
@@ -29,18 +30,14 @@ public class GlobalVertexService implements VertexService {
     @Autowired
     private PartitionManager partitionManager;
 
-
     @Autowired
     private VertexClient vertexClient;
 
     @Value("${server.numOfServers}")
     private int numOfServers;
 
-
     @Value("${myserver.serverId}")
     private String serverId;
-
-   
 
     public Vertex getVertex(String vertexId) throws VertexNotFoundException {
         int partitionId = partitionManager.getPartitionId(vertexId);
@@ -132,8 +129,21 @@ public class GlobalVertexService implements VertexService {
 
     @Override
     public long getVertexCount() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getVertexCount'");
+
+        Iterable<String> verticesIdsFromMyserver = vertexService.getAllVerticesIds();
+        int vertexCount = Iterables.size(verticesIdsFromMyserver);
+
+        // loop on all servers and get vertices ids from them
+        for (int i = 0; i < numOfServers; i++) {
+            if (i != Integer.parseInt(serverId)) {
+                // send to the right partition
+                Iterable<String> verticesIdsFromOtherServer = vertexClient.getAllVerticesIds(String.valueOf(i));
+                vertexCount += Iterables.size(verticesIdsFromOtherServer);
+            }
+
+        }
+
+        return vertexCount;
     }
 
     @Override
@@ -293,8 +303,9 @@ public class GlobalVertexService implements VertexService {
         }
         Thread[] activeThreads = new Thread[numOfServers];
         for (int i = 0; i < numOfServers; i++) {
-            activeThreads[i] = new Thread(new getOutgoingEdgesAsync(vertexService, verticesIdsByPartitionId.get(i), serverId, vertexClient,
-                    edgesByPartitionId.get(i), i));
+            activeThreads[i] = new Thread(
+                    new getOutgoingEdgesAsync(vertexService, verticesIdsByPartitionId.get(i), serverId, vertexClient,
+                            edgesByPartitionId.get(i), i));
             activeThreads[i].start();
         }
 
@@ -326,8 +337,9 @@ public class GlobalVertexService implements VertexService {
         }
         Thread[] activeThreads = new Thread[numOfServers];
         for (int i = 0; i < numOfServers; i++) {
-            activeThreads[i] = new Thread(new getIncomingEdgesAsync(vertexService, verticesIdsByPartitionId.get(i), serverId, vertexClient,
-                    edgesByPartitionId.get(i), i));
+            activeThreads[i] = new Thread(
+                    new getIncomingEdgesAsync(vertexService, verticesIdsByPartitionId.get(i), serverId, vertexClient,
+                            edgesByPartitionId.get(i), i));
             activeThreads[i].start();
         }
 
